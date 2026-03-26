@@ -295,7 +295,7 @@ class IcebergPartitionEvolutionTest
 
       // Verify all 6 rows are indexed
       val companion = readCompanion(indexPath)
-      companion.count() should be >= 6L
+      companion.count() shouldBe 6L
 
       // Verify partition column "region" is detected in companion splits
       val txLog = TransactionLogFactory.create(
@@ -355,7 +355,7 @@ class IcebergPartitionEvolutionTest
       row2.getString(2) shouldBe "success"
 
       // Verify all 6 rows are indexed
-      readCompanion(indexPath).count() should be >= 6L
+      readCompanion(indexPath).count() shouldBe 6L
 
       // Verify both partition columns are present in companion splits
       val txLog = TransactionLogFactory.create(
