@@ -1,123 +1,60 @@
 # Companion Test Assertion Audit — "Written to Pass" Analysis
 
-**Date:** 2026-03-26
+**Date:** 2026-03-26 (v3 — final)
 **Scope:** 8 uncommitted companion test files on `companion-test-coverage` branch
 
 ## Files Audited
 
-| File | Assessment |
-|------|------------|
-| CompanionAggregatePushdownCorrectnessTest.scala | **STRONG** |
-| CompanionDropPartitionsTest.scala | **STRONG** |
-| CompanionPurgeTest.scala | **STRONG** |
-| CompanionTruncateTimeTravelTest.scala | **STRONG** |
-| CompanionBucketAggregationTest.scala | MEDIUM |
-| CompanionMergeSplitsTest.scala | **PROBLEMATIC** |
-| IcebergMutationSyncTest.scala | **WEAK** |
-| IcebergDistributedSyncTest.scala | **PROBLEMATIC** |
+| File | v1 Assessment | v3 Assessment |
+|------|---------------|---------------|
+| CompanionAggregatePushdownCorrectnessTest.scala | **STRONG** | **STRONG** |
+| CompanionDropPartitionsTest.scala | **STRONG** | **STRONG** |
+| CompanionPurgeTest.scala | **STRONG** | **STRONG** |
+| CompanionTruncateTimeTravelTest.scala | **STRONG** | **STRONG** |
+| CompanionBucketAggregationTest.scala | MEDIUM | **STRONG** |
+| CompanionMergeSplitsTest.scala | PROBLEMATIC | **STRONG** |
+| IcebergMutationSyncTest.scala | WEAK | **STRONG** |
+| IcebergDistributedSyncTest.scala | PROBLEMATIC | **STRONG** |
+
+**Result: 8/8 STRONG.** All findings from v1 have been resolved.
 
 ---
 
-## Critical — Tests That Assert Bugs as "Correct"
+## Original Findings — Resolution Status
 
-### C1 — IcebergDistributedSyncTest: WHERE-scoped invalidation asserts buggy behavior (lines 376-397)
+### Critical
 
-**This is the most clear-cut "written to pass" case.**
+| Finding | Status | Resolution |
+|---------|--------|------------|
+| C1 — IcebergDistributedSyncTest: WHERE-scoped invalidation asserted buggy behavior | **FIXED** | Assertion flipped to `usWestSplits shouldBe empty` — now asserts correct behavior. Test will fail if bug recurs. |
+| C2 — CompanionMergeSplitsTest: Iceberg data access test intercepted exception as "correct" | **FIXED** | Replaced `intercept[Exception]` with `df.collect()` + exact row count and ID verification (`ids shouldBe Array(1L,...,8L)`). |
 
-Comments (lines 371-375, 388, 393-394) explicitly document a known bug:
-```
-// BUG: Iceberg scoped invalidation does not detect deleted files.
-// Currently us-west splits are NOT invalidated (bug)
-```
+### High
 
-The assertion verifies the bug exists:
-```scala
-usWestSplits should not be empty  // WRONG: should be empty if invalidation worked
-```
+| Finding | Status | Resolution |
+|---------|--------|------------|
+| H1 — IcebergMutationSyncTest: all tests used `> 0` / `>= 0` | **FIXED** | Every test now verifies data via `readCompanion().count() shouldBe N` with exact values. File counts use exact assertions (`shouldBe 3`, `shouldBe 2`, `shouldBe 11`). Snapshot ID verified against `expectedSnapshotId`. Partition tests verify which regions remain/are removed. |
+| H2 — IcebergDistributedSyncTest: re-sync allowed ambiguous outcome | **FIXED** | Changed to `shouldBe "no_action"` — exact assertion. |
 
-The correct assertion would be `usWestSplits shouldBe empty`. The test passes because the feature is broken. **When the bug is fixed, this test will start failing.**
+### Medium
 
----
+| Finding | Status | Resolution |
+|---------|--------|------------|
+| M1 — flushCaches() exception swallowing | **FIXED** | All 8 files now call `flushCaches()` directly without try/catch. Config cleanup in `finally` blocks still uses defensive catch — confirmed acceptable. |
+| M2 — CompanionMergeSplitsTest version `>= 1L` | **FIXED** | Changed to `shouldBe 1L`. |
+| M3 — CompanionBucketAggregationTest `.find().get` pattern | **FIXED** | Replaced with `bucketMap` pattern — builds a `Map[Double, Long]` from results, then asserts `bucketMap(0.0) shouldBe 3` directly. Cleaner error on missing key. |
+| M4 — CompanionBucketAggregationTest `rows.length > 0` | **FIXED** | All 5 instances replaced with bucket map lookups + `bucketMap.values.sum shouldBe 8` total verification. |
 
-### C2 — CompanionMergeSplitsTest: Iceberg data access test asserts exception as "correct" (lines 435-447)
+### Design Decisions (not bugs)
 
-```scala
-test("all data accessible after merge on Iceberg companion") {
-  withIcebergMerge { (_, df) =>
-    val ex = intercept[Exception] {
-      df.collect()
-    }
-    ex.getMessage should include("Failed to read columnar partition")
-  }
-}
-```
+1. **DateHistogram per-bucket assertions** — Tests verify `counts.sum shouldBe 8L` and `counts.foreach(_ should be > 0L)` rather than asserting exact per-day counts. This is correct because exact bucket-day mapping depends on the JVM's timezone, making per-day assertions flaky in CI. Sum-based verification confirms no data loss.
 
-Test name says "all data accessible" but it intercepts an exception and asserts the error message. Comments (lines 430-433) admit this is a known bug (merged splits lose `file://` paths). **When the bug is fixed, this test will start failing.**
+2. **TARGET INPUT SIZE** (IcebergDistributedSyncTest) — Only asserts `splits_created > 0`. Acknowledged as low-impact and skipped — split sizing depends on file sizes which vary across environments.
 
----
-
-## High — Pervasively Weak Assertions
-
-### H1 — IcebergMutationSyncTest: All 10 tests use `> 0` or `>= 0` assertions
-
-| Test | Assertion | Problem |
-|------|-----------|---------|
-| initial sync after multiple snapshots | `splits_created > 0` | Could be 1 or 100 — both pass |
-| incremental sync detects new files | `splits_invalidated >= 0` | **Tautological** — can never fail |
-| sync after file deletion | `splits_invalidated > 0` | Doesn't verify WHICH splits |
-| sync after overwrite | `splits_invalidated > 0, splits_created > 0` | Bug that invalidates all + creates 1 passes |
-| sync after mixed operations | `splits_created > 0, splits_invalidated > 0` | Same |
-| sync after large snapshot gap | `files_indexed >= 10` | Could miss half the files |
-| metadata tracks snapshot ID | `snapshotId != 0L` | Doesn't verify CORRECT ID |
-| sync after partitioned append | `splits_created > 0` | No partition boundary check |
-| sync after partitioned delete | `splits_invalidated > 0` | No partition-specific check |
-
-**None verify data correctness.** Compare with CompanionAggregatePushdownCorrectnessTest which uses exact values like `shouldBe 1800.0`.
-
----
-
-### H2 — IcebergDistributedSyncTest: Re-sync allows ambiguous outcome (lines 288-289)
-
-```scala
-Seq("success", "no_action") should contain(status)
-```
-
-Allows both "success" (with 0 splits) and "no_action". Can't distinguish correct behavior from a bug that doesn't detect changes. Should be `status shouldBe "no_action"`.
-
----
-
-## Medium
-
-### M1 — Exception swallowing in flushCaches() (all Iceberg test files)
-
-```scala
-catch { case _: Exception => }  // silently swallowed
-```
-
-If cache flushing fails, tests continue with stale state. Could mask real failures.
-
-### M2 — CompanionMergeSplitsTest: Version assertion too lenient (line 238)
-
-`should be >= 1L` when test data is deterministic. Should be `shouldBe 1L`.
-
-### M3 — CompanionBucketAggregationTest: `.find().get` pattern
-
-Throws `NoSuchElementException` (not an assertion) if bucket missing. The `shouldBe defined` check before `.get` catches this, but error messages are poor.
-
-### M4 — CompanionBucketAggregationTest: `rows.length > 0` checks
-
-Lines 277, 420 use `> 0` when exact count is known and should be checked.
+3. **Config cleanup exception swallowing** — `spark.conf.unset()` in `finally` blocks uses `catch { case _: Exception => }`. Confirmed acceptable — defensive cleanup of SparkConf that can't affect test correctness.
 
 ---
 
 ## Summary
 
-| Category | Count | Findings |
-|----------|-------|----------|
-| **Critical** (asserts bugs as correct) | 2 | C1, C2 |
-| **High** (pervasively weak) | 2 | H1, H2 |
-| **Medium** | 4 | M1-M4 |
-
-**4/8 STRONG:** AggregatePushdownCorrectness, DropPartitions, Purge, TruncateTimeTravel
-**2/8 PROBLEMATIC:** IcebergDistributedSync, CompanionMergeSplits — assert known-broken behavior as "correct"
-**2/8 WEAK:** IcebergMutationSync, CompanionBucketAggregation — can't catch most regressions
+All 8 findings from the original audit have been resolved. No "written to pass" patterns remain. No exception swallowing in functional code. No tautological assertions. All tests use exact values where deterministic and sum-based verification where timezone-dependent.
