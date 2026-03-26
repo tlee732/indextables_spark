@@ -78,7 +78,7 @@ class BucketAggregationTest extends AnyFunSuite with Matchers with io.indextable
         .load(tablePath)
 
       // Test histogram aggregation with interval of 50
-      // Expected buckets: 0-50 (4 items), 50-100 (3 items), 100-150 (0 items), 150-200 (1 item)
+      // Expected buckets: 0-50 (3 items), 50-100 (4 items), 100-150 (0 items), 150-200 (1 item)
       println("Histogram Test: Executing histogram aggregation with interval=50...")
 
       // Register the DataFrame as a temp view for SQL access
@@ -119,11 +119,10 @@ class BucketAggregationTest extends AnyFunSuite with Matchers with io.indextable
 
       println(s"Histogram Test: Found ${rows.length} buckets with correct counts")
 
-      // Clean up
+    } finally {
       deleteRecursively(tempDir)
-
-    } finally
       spark.stop()
+    }
   }
 
   test("DateHistogram aggregation should bucket timestamps with COUNT") {
@@ -132,17 +131,14 @@ class BucketAggregationTest extends AnyFunSuite with Matchers with io.indextable
     try {
       import spark.implicits._
 
-      // Create test data with timestamps spanning multiple days
-      val baseTime = System.currentTimeMillis()
-      val dayMs    = 24 * 60 * 60 * 1000L
-
+      // Create test data with fixed timestamps spanning multiple days
       val testData = Seq(
-        ("event1", new Timestamp(baseTime), 100),
-        ("event2", new Timestamp(baseTime + 1000), 200),
-        ("event3", new Timestamp(baseTime + dayMs), 300),
-        ("event4", new Timestamp(baseTime + dayMs + 1000), 400),
-        ("event5", new Timestamp(baseTime + 2 * dayMs), 500),
-        ("event6", new Timestamp(baseTime + 3 * dayMs), 600)
+        ("event1", Timestamp.valueOf("2024-01-01 10:00:00"), 100),
+        ("event2", Timestamp.valueOf("2024-01-01 14:00:00"), 200),
+        ("event3", Timestamp.valueOf("2024-01-02 10:00:00"), 300),
+        ("event4", Timestamp.valueOf("2024-01-02 14:00:00"), 400),
+        ("event5", Timestamp.valueOf("2024-01-03 10:00:00"), 500),
+        ("event6", Timestamp.valueOf("2024-01-04 10:00:00"), 600)
       ).toDF("name", "event_time", "value")
 
       val tempDir   = Files.createTempDirectory("date-histogram-test").toFile
@@ -181,16 +177,21 @@ class BucketAggregationTest extends AnyFunSuite with Matchers with io.indextable
       dateHistResult.show()
 
       // Verify results
+      // Expected: 4 daily buckets — 2024-01-01 (2), 2024-01-02 (2), 2024-01-03 (1), 2024-01-04 (1)
       val rows = dateHistResult.collect()
-      rows.length should be > 0
+      rows.length shouldBe 4
 
-      println(s"DateHistogram Test: Found ${rows.length} daily buckets")
+      rows(0).getAs[Long]("cnt") shouldBe 2
+      rows(1).getAs[Long]("cnt") shouldBe 2
+      rows(2).getAs[Long]("cnt") shouldBe 1
+      rows(3).getAs[Long]("cnt") shouldBe 1
 
-      // Clean up
+      println(s"DateHistogram Test: Found ${rows.length} daily buckets with correct counts")
+
+    } finally {
       deleteRecursively(tempDir)
-
-    } finally
       spark.stop()
+    }
   }
 
   test("Range aggregation should create custom buckets with COUNT") {
@@ -248,16 +249,30 @@ class BucketAggregationTest extends AnyFunSuite with Matchers with io.indextable
       rangeResult.show()
 
       // Verify results
+      // Expected: cheap (< 50) → 10, 25, 35 = 3 items
+      //           mid (50-100) → 75 = 1 item
+      //           expensive (>= 100) → 150, 250 = 2 items
       val rows = rangeResult.collect()
-      rows.length should be > 0
+      rows.length shouldBe 3
 
-      println(s"Range Test: Found ${rows.length} range buckets")
+      val cheap = rows.find(_.getAs[String]("price_tier") == "cheap")
+      cheap shouldBe defined
+      cheap.get.getAs[Long]("cnt") shouldBe 3
 
-      // Clean up
+      val mid = rows.find(_.getAs[String]("price_tier") == "mid")
+      mid shouldBe defined
+      mid.get.getAs[Long]("cnt") shouldBe 1
+
+      val expensive = rows.find(_.getAs[String]("price_tier") == "expensive")
+      expensive shouldBe defined
+      expensive.get.getAs[Long]("cnt") shouldBe 2
+
+      println(s"Range Test: Found ${rows.length} range buckets with correct counts")
+
+    } finally {
       deleteRecursively(tempDir)
-
-    } finally
       spark.stop()
+    }
   }
 
   test("Histogram aggregation with SUM sub-aggregation should work") {
@@ -330,10 +345,9 @@ class BucketAggregationTest extends AnyFunSuite with Matchers with io.indextable
 
       println(s"Histogram+SUM Test: Found ${rows.length} buckets with correct SUM values")
 
-      // Clean up
+    } finally {
       deleteRecursively(tempDir)
-
-    } finally
       spark.stop()
+    }
   }
 }

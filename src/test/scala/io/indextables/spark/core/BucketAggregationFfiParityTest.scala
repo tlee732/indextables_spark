@@ -164,9 +164,10 @@ class BucketAggregationFfiParityTest extends AnyFunSuite with Matchers with io.i
       disabledRows.length should be > 0
       assertResultsMatch(disabledRows, enabledRows, "DateHistogram COUNT")
 
+    } finally {
       deleteRecursively(tempDir)
-    } finally
       spark.stop()
+    }
   }
 
   // ===== Test 2: Histogram with COUNT =====
@@ -190,9 +191,10 @@ class BucketAggregationFfiParityTest extends AnyFunSuite with Matchers with io.i
       disabledRows.length should be > 0
       assertResultsMatch(disabledRows, enabledRows, "Histogram COUNT")
 
+    } finally {
       deleteRecursively(tempDir)
-    } finally
       spark.stop()
+    }
   }
 
   // ===== Test 3: Range with COUNT =====
@@ -218,9 +220,10 @@ class BucketAggregationFfiParityTest extends AnyFunSuite with Matchers with io.i
       disabledRows.length should be > 0
       assertResultsMatch(disabledRows, enabledRows, "Range COUNT")
 
+    } finally {
       deleteRecursively(tempDir)
-    } finally
       spark.stop()
+    }
   }
 
   // ===== Test 4: Histogram with SUM sub-aggregation =====
@@ -244,9 +247,10 @@ class BucketAggregationFfiParityTest extends AnyFunSuite with Matchers with io.i
       disabledRows.length should be > 0
       assertResultsMatch(disabledRows, enabledRows, "Histogram SUM")
 
+    } finally {
       deleteRecursively(tempDir)
-    } finally
       spark.stop()
+    }
   }
 
   // ===== Test 5: DateHistogram + hostname multi-key =====
@@ -270,9 +274,10 @@ class BucketAggregationFfiParityTest extends AnyFunSuite with Matchers with io.i
       disabledRows.length should be > 0
       assertResultsMatch(disabledRows, enabledRows, "DateHistogram + hostname multi-key")
 
+    } finally {
       deleteRecursively(tempDir)
-    } finally
       spark.stop()
+    }
   }
 
   // ===== Test 6: Histogram + hostname multi-key =====
@@ -296,58 +301,39 @@ class BucketAggregationFfiParityTest extends AnyFunSuite with Matchers with io.i
       disabledRows.length should be > 0
       assertResultsMatch(disabledRows, enabledRows, "Histogram + hostname multi-key")
 
+    } finally {
       deleteRecursively(tempDir)
-    } finally
       spark.stop()
+    }
   }
 
-  // ===== Test 7: 3-column GROUP BY (FR-1: N-level nested terms) =====
+  // ===== Test 7: Range + hostname multi-key =====
 
-  test("parity: 3-column GROUP BY with COUNT and SUM") {
-    val spark = createSparkSession("bucket-ffi-parity-3col-groupby")
+  test("parity: Range + hostname multi-key bucket aggregation") {
+    val spark = createSparkSession("bucket-ffi-parity-range-multikey")
     try {
-      import spark.implicits._
-
-      val testData = Seq(
-        ("US", "Electronics", "Q1", 100),
-        ("US", "Electronics", "Q2", 200),
-        ("US", "Books", "Q1", 50),
-        ("UK", "Electronics", "Q1", 80),
-        ("UK", "Books", "Q2", 30),
-        ("US", "Electronics", "Q1", 150)
-      ).toDF("region", "category", "quarter", "sales")
-
-      val tempDir   = Files.createTempDirectory("3col-groupby-parity").toFile
-      val tablePath = tempDir.getAbsolutePath
-
-      testData.write
-        .format(PROVIDER)
-        .option("spark.indextables.indexing.fastfields", "region,category,quarter,sales")
-        .option("spark.indextables.write.optimizeWrite.enabled", "true")
-        .mode(SaveMode.Overwrite)
-        .save(tablePath)
+      val (tempDir, tablePath) = writeTestData(spark)
 
       val (disabledRows, enabledRows) = runWithBothPaths(
         spark,
         tablePath,
         viewName => s"""
-          SELECT region, category, quarter, COUNT(*) as cnt, SUM(sales) as total_sales
+          SELECT
+            indextables_range(price, 'cheap', NULL, 50.0, 'mid', 50.0, 100.0, 'expensive', 100.0, NULL) as price_tier,
+            hostname,
+            COUNT(*) as cnt
           FROM $viewName
-          GROUP BY region, category, quarter
-          ORDER BY region, category, quarter
+          GROUP BY indextables_range(price, 'cheap', NULL, 50.0, 'mid', 50.0, 100.0, 'expensive', 100.0, NULL), hostname
+          ORDER BY price_tier, hostname
         """
       )
 
       disabledRows.length should be > 0
-      assertResultsMatch(disabledRows, enabledRows, "3-column GROUP BY")
+      assertResultsMatch(disabledRows, enabledRows, "Range + hostname multi-key")
 
-      // Verify expected row count (5 distinct combinations)
-      disabledRows.length shouldBe 5
-
+    } finally {
       deleteRecursively(tempDir)
-    } finally
       spark.stop()
+    }
   }
-
-  // ===== Helpers =====
 }
