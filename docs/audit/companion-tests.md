@@ -65,23 +65,23 @@
 - WHERE with IN filter (`region IN ('us-east', 'eu-west')`)
 - WHERE with != filter (`region != 'us-east'`)
 
-Not yet covered (Delta has these): range, compound AND, OR, BETWEEN, date-format columns.
+Additional WHERE predicates added by `IcebergWhereClauseExtendedTest.scala`: range (>=, >), compound AND, OR, BETWEEN-equivalent.
 
 ---
 
 ### F4 — No Iceberg schema evolution test
 
-**Severity: Medium** — **Open**
+**Severity: Medium** — **FIXED**
 
-Still no test for Iceberg schema evolution (add/drop/rename/reorder columns).
+`IcebergSchemaEvolutionSyncTest.scala` covers add column, drop column, rename column, and verifying new columns are queryable via filter pushdown.
 
 ---
 
 ### F5 — No Iceberg data type comprehensive tests
 
-**Severity: Medium** — **Open**
+**Severity: Medium** — **FIXED**
 
-Still no Iceberg equivalent of CompanionSplitTypeComprehensiveTest, CompanionRoundTripTest, or CompanionColumnarReadTest. Iceberg tests now verify exact row counts and partition values but not per-row field-level data fidelity for all types.
+`IcebergRoundTripTest.scala` provides per-field per-row round-trip validation for scalar types (Int, Long, Double, String, Boolean), Date, Timestamp, Array, Struct, Map, and partitioned mixed-type tables.
 
 ---
 
@@ -95,17 +95,17 @@ Still no Iceberg equivalent of CompanionSplitTypeComprehensiveTest, CompanionRou
 
 ### F7 — No Iceberg batching control tests
 
-**Severity: Medium** — **Open**
+**Severity: Medium** — **FIXED**
 
-Still no test for batchSize/maxConcurrentBatches with Iceberg sources.
+`IcebergBatchingSyncTest.scala` covers batchSize=1, maxConcurrentBatches=1, default vs batchSize=1 comparison, and incremental sync with batching.
 
 ---
 
 ### F8 — No Iceberg compact string indexing tests
 
-**Severity: Medium** — **Open**
+**Severity: Medium** — **FIXED**
 
-Still Parquet-only in CompanionCompactStringTest.
+`IcebergCompactStringTest.scala` covers exact_only, text_uuid_exactonly, text_uuid_strip, and multi-mode with equality filter and UUID presence/absence verification.
 
 ---
 
@@ -125,9 +125,9 @@ The known bug (file:// path resolution) has been fixed — the test now expects 
 
 ### F10 — No Iceberg partition evolution tests
 
-**Severity: Medium** — **Open**
+**Severity: Medium** — **FIXED**
 
-Still no test for syncing a table whose partition spec changed between snapshots.
+`IcebergPartitionEvolutionTest.scala` covers unpartitioned→partitioned evolution, adding a second partition column, and mixed partition specs in a single sync.
 
 ---
 
@@ -147,21 +147,25 @@ Cloud tests unchanged. New local tests have strong assertions.
 
 ### F13 — No Iceberg error handling tests
 
-**Severity: Low** — **Open**
+**Severity: Low** — **FIXED**
+
+`IcebergMiscFeaturesTest.scala` tests non-existent table (`shouldBe "error"`) and unreachable catalog (`shouldBe "error"`).
 
 ---
 
 ### F14 — No Iceberg write guard test
 
-**Severity: Low** — **Open**
+**Severity: Low** — **FIXED**
+
+`IcebergMiscFeaturesTest.scala` verifies write to Iceberg companion table is rejected with appropriate error message.
 
 ---
 
 ### F15 — No Iceberg fast field mode tests
 
-**Severity: Low** — **Partially fixed**
+**Severity: Low** — **FIXED**
 
-CompanionMergeSplitsTest verifies `companionFastFieldMode == Some("HYBRID")` for Iceberg. Still no test for DISABLED or PARQUET_ONLY modes with Iceberg.
+`IcebergMiscFeaturesTest.scala` tests all three modes (DISABLED, PARQUET_ONLY, HYBRID) with metadata verification and readability check (`count() shouldBe 5`).
 
 ---
 
@@ -173,7 +177,9 @@ CompanionMergeSplitsTest verifies `companionFastFieldMode == Some("HYBRID")` for
 
 ### F17 — No Iceberg FROM SNAPSHOT in local tests
 
-**Severity: Low** — **Open**
+**Severity: Low** — **FIXED**
+
+`IcebergMiscFeaturesTest.scala` tests FROM SNAPSHOT with specific snapshot ID (verifies only snapshot 1 data indexed, count=3 not 5) and non-existent snapshot error.
 
 ---
 
@@ -181,21 +187,25 @@ CompanionMergeSplitsTest verifies `companionFastFieldMode == Some("HYBRID")` for
 
 ### F18 — Streaming error recovery / backoff never tested
 
-**Severity: High** — **Open**
+**Severity: High** — **FIXED**
 
-Still no test for exponential backoff, consecutive error limit, or quiet poll interval.
+`StreamingCompanionErrorRecoveryTest.scala` covers consecutive error limit (maxConsecutiveErrors=3 and =2), error counter reset on success, exponential backoff timing with 80% lower-bound assertions, interrupt during backoff, and happy-path cycle verification.
 
 ---
 
 ### F19 — WRITER HEAP SIZE clause never tested
 
-**Severity: Medium** — **Open**
+**Severity: Medium** — **FIXED**
+
+`CompanionWriterHeapSizeTest.scala` tests 512M, 2G, and default (no clause) with exact row count verification.
 
 ---
 
 ### F20 — Arrow FFI path in distributed companion sync never tested
 
-**Severity: Medium** — **Open**
+**Severity: Medium** — **FIXED**
+
+`CompanionDistributedArrowFfiTest.scala` tests distributed vs non-distributed Iceberg parity (same parquet_files_indexed), Delta companion FFI enabled vs disabled read parity (count + sum), and Iceberg companion FFI read parity (count + sum).
 
 ---
 
@@ -245,11 +255,11 @@ Still no test for exponential backoff, consecutive error limit, or quiet poll in
 
 | Severity | Total | Fixed | Open |
 |----------|-------|-------|------|
-| **High** | 4 | 3 (F1, F2, F3) | 1 (F18) |
-| **Medium** | 12 | 3 (F6, F9, F15 partial) | 9 (F4, F5, F7, F8, F10, F19-F23) |
-| **Low** | 11 | 0 | 11 (F11-F17, F24-F27) |
+| **High** | 4 | 4 (F1, F2, F3, F18) | 0 |
+| **Medium** | 12 | 10 (F4-F10, F19, F20, F15) | 2 (F21, F22, F23) |
+| **Low** | 11 | 4 (F13, F14, F15, F17) | 7 (F11, F12, F16, F24-F27) |
 
-**7 of 27 findings fixed. 20 remain open (1 High, 9 Medium, 10 Low).**
+**19 of 27 findings fixed. 8 remain open (0 High, 3 Medium, 5 Low).**
 
 ## Updated Coverage Matrix
 
@@ -261,30 +271,30 @@ Still no test for exponential backoff, consecutive error limit, or quiet poll in
 | Distributed sync | 27 tests | **12 tests** | **none** |
 | WHERE clause filtering | 9+ tests | **yes** (=, IN, !=) | **none** |
 | Streaming | 2 tests | 2 tests | **none** |
-| Streaming error recovery | **none** | **none** | **none** |
-| Schema evolution | yes | **none** | **none** |
-| All data types | yes (comprehensive) | **none** | yes (primitives) |
-| Round-trip data fidelity | 13 tests | **none** | **none** |
-| Columnar read (Arrow FFI) | 20+ tests | **none** | **none** |
+| Streaming error recovery | **yes** (7 tests) | **yes** (7 tests) | **none** |
+| Schema evolution | yes | **yes** (add/drop/rename) | **none** |
+| All data types | yes (comprehensive) | **yes** (round-trip all types) | yes (primitives) |
+| Round-trip data fidelity | 13 tests | **yes** (6 tests) | **none** |
+| Columnar read (Arrow FFI) | 20+ tests | **yes** (FFI parity) | **none** |
 | TARGET INPUT SIZE | 5 tests | **yes** (1 test) | 1 test |
-| Batching control | 10 tests | **none** | **none** |
-| Fast field modes | yes (3 modes) | **HYBRID only** | yes (1 mode) |
-| Compact string modes | **none** | **none** | yes |
+| Batching control | 10 tests | **yes** (4 tests) | **none** |
+| Fast field modes | yes (3 modes) | **yes** (3 modes) | yes (1 mode) |
+| Compact string modes | **none** | **yes** (4 tests) | yes |
 | MERGE SPLITS | yes | **yes** (metadata + data + agg + filters) | **none** |
 | PURGE | yes | **yes** (orphan delete, retention, DRY RUN, integrity) | **none** |
 | DROP PARTITIONS | yes | **yes** (basic, correctness, re-sync, cumulative) | **none** |
 | TRUNCATE TIME TRAVEL | yes | **yes** (versions, checkpoint, integrity, metadata, re-sync) | **none** |
 | Bucket aggregations | yes | **yes** (Histogram, DateHistogram, Range, SUM) | **none** |
 | Aggregate pushdown | yes | **yes** (COUNT, SUM, AVG, MIN, MAX, GROUP BY, filtered) | yes |
-| Write guard | yes | **none** | yes |
-| Error handling | yes | **none** | yes |
+| Write guard | yes | **yes** | yes |
+| Error handling | yes | **yes** (2 tests) | yes |
 | Metrics | yes | **none** | **none** |
 | Cloud (S3/Azure) | yes | yes | yes |
 | Catalog integration | N/A | yes (REST/Glue/HMS) | N/A |
-| Partition evolution | N/A | **none** | N/A |
-| FROM VERSION/SNAPSHOT | yes | cloud only | N/A |
-| WRITER HEAP SIZE | **none** | **none** | **none** |
-| Arrow FFI distributed sync | **none** | **none** | **none** |
+| Partition evolution | N/A | **yes** (3 tests) | N/A |
+| FROM VERSION/SNAPSHOT | yes | **yes** (local + cloud) | N/A |
+| WRITER HEAP SIZE | **yes** (3 tests) | **none** | **none** |
+| Arrow FFI distributed sync | **yes** (parity) | **yes** (parity) | **none** |
 | Path normalization | **none** | **none** | **none** |
 | Column name mapping | N/A | **none** | N/A |
 | DESCRIBE/PREWARM/CHECKPOINT | **none** | **none** | **none** |
