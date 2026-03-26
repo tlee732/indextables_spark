@@ -21,7 +21,7 @@ import java.io.File
 import java.nio.file.Files
 import java.sql.Timestamp
 
-import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.SaveMode
 
 import org.scalatest.funsuite.AnyFunSuite
@@ -34,18 +34,9 @@ import org.scalatest.matchers.should.Matchers
  * the results match exactly. This ensures the FFI columnar path produces identical results to the object-based
  * InternalRow fallback path for all bucket aggregation types.
  */
-class BucketAggregationFfiParityTest extends AnyFunSuite with Matchers with io.indextables.spark.testutils.FileCleanupHelper {
-
-  private val PROVIDER   = io.indextables.spark.TestBase.INDEXTABLES_FORMAT
-  private val EXTENSIONS = "io.indextables.spark.extensions.IndexTables4SparkExtensions"
-
-  private def createSparkSession(appName: String): SparkSession =
-    SparkSession
-      .builder()
-      .appName(appName)
-      .master("local[*]")
-      .config("spark.sql.extensions", EXTENSIONS)
-      .getOrCreate()
+class BucketAggregationFfiParityTest extends AnyFunSuite with Matchers
+    with io.indextables.spark.testutils.FileCleanupHelper
+    with io.indextables.spark.testutils.FfiParityTestBase {
 
   /**
    * Write shared test data once for a given test, returning the table path. Uses optimized write to produce a single
@@ -78,69 +69,6 @@ class BucketAggregationFfiParityTest extends AnyFunSuite with Matchers with io.i
       .save(tablePath)
 
     (tempDir, tablePath)
-  }
-
-  /**
-   * Run a SQL query against a table loaded with the given FFI setting. Creates a temporary view with a unique name to
-   * avoid conflicts.
-   */
-  private def runQuery(
-    spark: SparkSession,
-    tablePath: String,
-    ffiEnabled: Boolean,
-    viewName: String,
-    sql: String
-  ): Array[Row] = {
-    val df = spark.read
-      .format(PROVIDER)
-      .option("spark.indextables.read.aggregation.arrowFfi.enabled", ffiEnabled.toString)
-      .load(tablePath)
-
-    df.createOrReplaceTempView(viewName)
-    spark.sql(sql).collect()
-  }
-
-  /** Run a query with both FFI disabled and enabled, returning both result arrays. */
-  private def runWithBothPaths(
-    spark: SparkSession,
-    tablePath: String,
-    queryTemplate: String => String
-  ): (Array[Row], Array[Row]) = {
-    val viewDisabled = "tbl_ffi_off"
-    val viewEnabled  = "tbl_ffi_on"
-
-    val disabledRows = runQuery(spark, tablePath, ffiEnabled = false, viewDisabled, queryTemplate(viewDisabled))
-    val enabledRows  = runQuery(spark, tablePath, ffiEnabled = true, viewEnabled, queryTemplate(viewEnabled))
-
-    (disabledRows, enabledRows)
-  }
-
-  /** Assert that two result sets match row-by-row after sorting by the first column. */
-  private def assertResultsMatch(
-    disabledRows: Array[Row],
-    enabledRows: Array[Row],
-    testLabel: String
-  ): Unit = {
-    withClue(s"$testLabel: row count mismatch") {
-      disabledRows.length shouldBe enabledRows.length
-    }
-
-    val sortedDisabled = disabledRows.sortBy(_.get(0).toString)
-    val sortedEnabled  = enabledRows.sortBy(_.get(0).toString)
-
-    sortedDisabled.zip(sortedEnabled).zipWithIndex.foreach {
-      case ((rowD, rowE), idx) =>
-        withClue(s"$testLabel: column count mismatch at row $idx") {
-          rowD.length shouldBe rowE.length
-        }
-        (0 until rowD.length).foreach { col =>
-          withClue(
-            s"$testLabel: value mismatch at row $idx, col $col: disabled=${rowD.get(col)}, enabled=${rowE.get(col)}"
-          ) {
-            rowD.get(col) shouldBe rowE.get(col)
-          }
-        }
-    }
   }
 
   // ===== Test 1: DateHistogram with COUNT =====

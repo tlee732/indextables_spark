@@ -17,10 +17,8 @@
 
 package io.indextables.spark.core
 
-import java.io.File
 import java.nio.file.Files
 
-import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.SaveMode
 
 import org.scalatest.funsuite.AnyFunSuite
@@ -33,75 +31,9 @@ import org.scalatest.matchers.should.Matchers
  * (terms aggregation) rather than bucket aggregation functions like indextables_histogram,
  * indextables_date_histogram, or indextables_range.
  */
-class AggregationGroupByFfiParityTest extends AnyFunSuite with Matchers with io.indextables.spark.testutils.FileCleanupHelper {
-
-  private val PROVIDER   = io.indextables.spark.TestBase.INDEXTABLES_FORMAT
-  private val EXTENSIONS = "io.indextables.spark.extensions.IndexTables4SparkExtensions"
-
-  private def createSparkSession(appName: String): SparkSession =
-    SparkSession
-      .builder()
-      .appName(appName)
-      .master("local[*]")
-      .config("spark.sql.extensions", EXTENSIONS)
-      .getOrCreate()
-
-  private def runQuery(
-    spark: SparkSession,
-    tablePath: String,
-    ffiEnabled: Boolean,
-    viewName: String,
-    sql: String
-  ): Array[Row] = {
-    val df = spark.read
-      .format(PROVIDER)
-      .option("spark.indextables.read.aggregation.arrowFfi.enabled", ffiEnabled.toString)
-      .load(tablePath)
-
-    df.createOrReplaceTempView(viewName)
-    spark.sql(sql).collect()
-  }
-
-  private def runWithBothPaths(
-    spark: SparkSession,
-    tablePath: String,
-    queryTemplate: String => String
-  ): (Array[Row], Array[Row]) = {
-    val viewDisabled = "tbl_ffi_off"
-    val viewEnabled  = "tbl_ffi_on"
-
-    val disabledRows = runQuery(spark, tablePath, ffiEnabled = false, viewDisabled, queryTemplate(viewDisabled))
-    val enabledRows  = runQuery(spark, tablePath, ffiEnabled = true, viewEnabled, queryTemplate(viewEnabled))
-
-    (disabledRows, enabledRows)
-  }
-
-  private def assertResultsMatch(
-    disabledRows: Array[Row],
-    enabledRows: Array[Row],
-    testLabel: String
-  ): Unit = {
-    withClue(s"$testLabel: row count mismatch") {
-      disabledRows.length shouldBe enabledRows.length
-    }
-
-    val sortedDisabled = disabledRows.sortBy(_.get(0).toString)
-    val sortedEnabled  = enabledRows.sortBy(_.get(0).toString)
-
-    sortedDisabled.zip(sortedEnabled).zipWithIndex.foreach {
-      case ((rowD, rowE), idx) =>
-        withClue(s"$testLabel: column count mismatch at row $idx") {
-          rowD.length shouldBe rowE.length
-        }
-        (0 until rowD.length).foreach { col =>
-          withClue(
-            s"$testLabel: value mismatch at row $idx, col $col: disabled=${rowD.get(col)}, enabled=${rowE.get(col)}"
-          ) {
-            rowD.get(col) shouldBe rowE.get(col)
-          }
-        }
-    }
-  }
+class AggregationGroupByFfiParityTest extends AnyFunSuite with Matchers
+    with io.indextables.spark.testutils.FileCleanupHelper
+    with io.indextables.spark.testutils.FfiParityTestBase {
 
   test("parity: 3-column GROUP BY with COUNT and SUM") {
     val spark = createSparkSession("groupby-ffi-parity-3col")

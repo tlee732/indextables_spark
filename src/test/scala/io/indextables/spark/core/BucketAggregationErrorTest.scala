@@ -20,7 +20,7 @@ package io.indextables.spark.core
 import java.nio.file.Files
 import java.sql.Timestamp
 
-import org.apache.spark.sql.{AnalysisException, SaveMode, SparkSession}
+import org.apache.spark.sql.{SaveMode, SparkSession}
 
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
