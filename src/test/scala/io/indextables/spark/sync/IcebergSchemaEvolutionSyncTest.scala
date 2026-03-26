@@ -237,7 +237,12 @@ class IcebergSchemaEvolutionSyncTest
       val row2 = syncIceberg("add_col", indexPath)
       row2.getString(2) shouldBe "success"
 
-      readCompanion(indexPath).count() shouldBe 8 // 5 original + 3 new
+      val companion = readCompanion(indexPath)
+      companion.count() shouldBe 8 // 5 original + 3 new
+
+      // Verify the new column is queryable
+      companion.filter("department = 'engineering'").count() shouldBe 1
+      companion.filter("department = 'marketing'").count() shouldBe 1
     }
   }
 
@@ -275,7 +280,12 @@ class IcebergSchemaEvolutionSyncTest
       val row2 = syncIceberg("drop_col", indexPath)
       row2.getString(2) shouldBe "success"
 
-      readCompanion(indexPath).count() shouldBe 8 // 5 original + 3 new
+      val companion = readCompanion(indexPath)
+      companion.count() shouldBe 8 // 5 original + 3 new
+
+      // Verify remaining columns are still queryable
+      companion.filter("name = 'alice'").count() shouldBe 1
+      companion.filter("name = 'frank'").count() shouldBe 1
     }
   }
 
@@ -358,8 +368,12 @@ class IcebergSchemaEvolutionSyncTest
       val row2 = syncIceberg("rename_col", indexPath)
       row2.getString(2) shouldBe "success"
 
-      // Verify data is accessible
-      readCompanion(indexPath).count() shouldBe 8 // 5 original + 3 new
+      val companion = readCompanion(indexPath)
+      companion.count() shouldBe 8 // 5 original + 3 new
+
+      // Verify the renamed column is queryable
+      companion.filter("full_name = 'frank'").count() shouldBe 1
+      companion.filter("full_name = 'alice'").count() shouldBe 1
     }
   }
 }

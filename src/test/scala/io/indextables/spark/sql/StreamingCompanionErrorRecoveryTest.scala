@@ -187,9 +187,9 @@ class StreamingCompanionErrorRecoveryTest extends TestBase {
       // After error 1: sleep = 2^1 * 500 = 1000ms
       // After error 2: sleep = 2^2 * 500 = 2000ms
       // After error 3: sleep = 2^3 * 500 = 4000ms (but hits maxConsecutiveErrors, no sleep)
-      // Allow 50% tolerance for JVM scheduling jitter
-      intervals(0) should be >= 500L  // first backoff: ~1000ms
-      intervals(1) should be >= 1000L // second backoff: ~2000ms
+      // 80% of expected value to allow JVM jitter while catching broken backoff
+      intervals(0) should be >= 800L  // first backoff: ~1000ms (2^1 * 500)
+      intervals(1) should be >= 1600L // second backoff: ~2000ms (2^2 * 500)
       // Third interval is just the time to throw, no sleep
     } finally {
       spark.conf.unset("spark.indextables.companion.stream.maxConsecutiveErrors")
