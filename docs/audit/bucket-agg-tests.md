@@ -139,10 +139,10 @@ Only `COUNT(*)` and `SUM()` are tested as sub-aggregations within buckets. The s
 **Severity:** Medium
 
 The following supported parameters have zero test coverage:
-- `offset` (DateHistogram, Histogram)
-- `minDocCount` (DateHistogram, Histogram)
-- `hardBounds` (DateHistogram, Histogram)
-- `extendedBounds` (DateHistogram, Histogram)
+- `offset` (DateHistogram, Histogram) — **FIXED: tests added**
+- `minDocCount` (DateHistogram, Histogram) — **FIXED: tests added**
+- `hardBounds` (DateHistogram, Histogram) — **NOT EXPOSED in SQL layer** (BucketFunctionBuilder does not parse these; Config + native plumbing exists but SQL syntax not wired)
+- `extendedBounds` (DateHistogram, Histogram) — **NOT EXPOSED in SQL layer** (same as hardBounds)
 
 ---
 
